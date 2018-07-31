@@ -7,12 +7,12 @@ using System.Runtime.InteropServices;
 
 class LoadMPQ {
     [Import]
-    Profile profile;
+    Profile CurrentProfile;
 
     [Export(typeof(InitializeDelegate))]
     public void Initialize() {
         try {
-            var dir = $"{profile.PluginsDirectory}\\LoadMPQ";
+            var dir = $"{CurrentProfile.PluginsDirectory}\\LoadMPQ";
             if(!Directory.Exists(dir)) {
                 Directory.CreateDirectory(dir);
                 File.Create($"{dir}\\place_your_mpq_here!");
