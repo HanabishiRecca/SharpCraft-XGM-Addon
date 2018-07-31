@@ -5,7 +5,7 @@ Additional functionality for SharpCraft WEX Bundle.
 ### Contains
 - [**Adic Helper**](https://cjass.xgm.guru/) - cJass parser
 - [**Project Horus**](https://cjass.xgm.guru/) - cJass syntax highlight
-- **MPQLoad** - custom MPQ injector
+- **LoadMPQ** - custom MPQ injector
 
 ### Installation
 1. Download and install [SharpCraft WEX Bundle](https://www.hiveworkshop.com/threads/sharpcraft-world-editor-extended-bundle.292127/)
