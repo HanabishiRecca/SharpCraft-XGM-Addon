@@ -1,14 +1,10 @@
-﻿using System;
-using System.IO;
+﻿using System.ComponentModel.Composition;
 using System.Diagnostics;
-using System.ComponentModel.Composition;
-using SharpCraft.Framework;
+using System.IO;
 using Microsoft.Win32;
+using SharpCraft.Framework;
 
 class AutoRegExt {
-    [Import]
-    Profile CurrentProfile;
-
     [Import]
     SharpCraftEnvironment CurrentEnvironment;
 

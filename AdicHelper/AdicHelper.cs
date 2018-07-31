@@ -1,12 +1,11 @@
-﻿using System;
-using System.IO;
+﻿using System.ComponentModel.Composition;
 using System.Diagnostics;
-using System.ComponentModel.Composition;
-using SharpCraft.Framework;
+using System.IO;
 using MindWorX.Generic.PluginStorage;
+using MindWorX.War3Editor.Hooks;
 using MindWorX.War3Editor.MenuInjection;
 using MindWorX.War3Editor.ProcessingInjection;
-using MindWorX.War3Editor.Hooks;
+using SharpCraft.Framework;
 
 [Export(typeof(ICompiler)), Export(typeof(ICompilerMenuProvider))]
 class AdicHelper : ICompiler, ICompilerMenuProvider {

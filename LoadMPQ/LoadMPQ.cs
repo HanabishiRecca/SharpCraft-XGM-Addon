@@ -1,9 +1,9 @@
 ﻿using System;
-using System.IO;
-using System.Diagnostics;
 using System.ComponentModel.Composition;
-using SharpCraft.Framework;
+using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
+using SharpCraft.Framework;
 
 class LoadMPQ {
     [Import]
