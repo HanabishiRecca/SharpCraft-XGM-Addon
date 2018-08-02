@@ -23,6 +23,13 @@ class LoadMPQ {
             if(archives.Length < 1)
                 return;
 
+            var cd = Directory.GetCurrentDirectory();
+            for(int i = 0; i < archives.Length; i++) {
+                var path = archives[i];
+                if(path.StartsWith(cd))
+                    archives[i] = path.Substring(cd.Length + 1);
+            }
+
             ApplyPatch(archives);
         } catch {
         }
@@ -59,7 +66,7 @@ class LoadMPQ {
     int InjectArchives(IntPtr codeDestAddr, IntPtr mpqFuncAddr, string[] list) {
         var offset = 0;
         for(int i = 0; i < list.Length; i++) {
-            offset += WriteMovEspDword(Marshal.StringToCoTaskMemAnsi(list[i]), codeDestAddr + offset);
+            offset += WriteMovEspDword(Marshal.StringToHGlobalAnsi(list[i]), codeDestAddr + offset);
             offset += WriteCall(mpqFuncAddr, codeDestAddr + offset);
         }
         Marshal.Copy(exPatch, 0, codeDestAddr + offset, exPatch.Length);
