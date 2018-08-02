@@ -12,9 +12,6 @@ class UMSWE {
     [Export(typeof(InitializeDelegate))]
     public void Initialize() {
         try {
-            TempFolder = $"{Path.GetTempPath()}\\UMSWE_TEMP";
-            WETempFolderIssueWorkaround();
-
             var loadmpq = $"{CurrentProfile.PluginsDirectory}\\LoadMPQ";
             Directory.CreateDirectory(loadmpq);
 
@@ -26,7 +23,8 @@ class UMSWE {
 
             if(CheckIntegrity())
                 return;
-
+            
+            TempFolder = $"{Path.GetTempPath()}\\UMSWE_TEMP";
             Directory.CreateDirectory(TempFolder);
             BuildDataFiles();
             BuildArchive();
@@ -85,8 +83,10 @@ class UMSWE {
     const uint Revision = 1;
     void BuildArchive() {
         File.Delete(ArchivePath);
+        var otherFiles = Directory.GetFiles(UmswePath);
+
         var handle = IntPtr.Zero;
-        SFileCreateArchive(ArchivePath, 0, 20, out handle);
+        SFileCreateArchive(ArchivePath, 0, (uint)(DataFiles.Length + otherFiles.Length), out handle);
         SFileCloseArchive(handle);
 
         using(var mpq = new MpqArchive(ArchivePath, FileAccess.ReadWrite)) {
@@ -95,8 +95,7 @@ class UMSWE {
                 var file = DataFiles[i];
                 mpq.AddFileFromDisk($"{TempFolder}\\{file}", $"UI\\{file}");
             }
-
-            var otherFiles = Directory.GetFiles(UmswePath);
+            
             for(int i = 0; i < otherFiles.Length; i++) {
                 var file = otherFiles[i];
                 mpq.AddFileFromDisk(file, Path.GetFileName(file));
@@ -151,14 +150,4 @@ class UMSWE {
 
     [DllImport("stormlib.dll", ExactSpelling = true, SetLastError = true, ThrowOnUnmappableChar = false)]
     public static extern bool SFileCloseArchive(IntPtr hMpq);
-
-    //World Editor temp folder issue workaround. THANKS BLIZZARD. Details: https://us.battle.net/forums/en/bnet/topic/20766887191
-    FileStream TmpLock;
-    void WETempFolderIssueWorkaround() {
-        var newPath = $"{Path.GetTempPath()}\\WorldEditorTemp";
-        Environment.SetEnvironmentVariable("TMP", newPath);
-        Environment.SetEnvironmentVariable("TEMP", newPath);
-        Directory.CreateDirectory(newPath);
-        TmpLock = new FileStream($"{newPath}\\lock", FileMode.Create, FileAccess.ReadWrite, FileShare.None);
-    }
 }
