@@ -30,8 +30,7 @@ class UMSWE {
             BuildArchive();
             StoreIntegrity();
             Directory.Delete(TempFolder, true);
-        } catch(Exception e) {
-            File.WriteAllText("info.log", e.ToString());
+        } catch {
         }
     }
 
