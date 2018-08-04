@@ -64,6 +64,10 @@
       <HintPath>..\MindWorX.War3Editor.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="Serilog">
+      <HintPath>..\Serilog.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="SharpCraft.Framework">
       <HintPath>..\SharpCraft.Framework.dll</HintPath>
       <Private>False</Private>

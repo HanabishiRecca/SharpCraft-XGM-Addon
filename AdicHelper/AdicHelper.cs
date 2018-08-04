@@ -5,6 +5,7 @@ using MindWorX.Generic.PluginStorage;
 using MindWorX.War3Editor.Hooks;
 using MindWorX.War3Editor.MenuInjection;
 using MindWorX.War3Editor.ProcessingInjection;
+using Serilog;
 using SharpCraft.Framework;
 
 [Export(typeof(ICompiler)), Export(typeof(ICompilerMenuProvider))]
@@ -17,103 +18,69 @@ class AdicHelper : ICompiler, ICompilerMenuProvider {
 
     [Import]
     IWar3EditorHooks Hooks;
-
+    
     PluginStorage Storage;
-    string AHPath, AHWorkFolder;
-
+    
     const string AH = "AdicHelper";
     public string Name { get; } = AH;
     public string Group { get; } = AH;
     public int OrderIndex { get; } = -1;
     
-    bool ParserEnabled {
-        get => Storage.GetValue(nameof(ParserEnabled), true);
-        set => Storage.SetValue(nameof(ParserEnabled), value);
-    }
-
-    bool OptimizerEnabled {
-        get => Storage.GetValue(nameof(OptimizerEnabled), true);
-        set => Storage.SetValue(nameof(OptimizerEnabled), value);
-    }
-
-    bool DebugMode {
-        get => Storage.GetValue(nameof(DebugMode), false);
-        set => Storage.SetValue(nameof(DebugMode), value);
-    }
-
-    bool LocalsFlush {
-        get => Storage.GetValue(nameof(LocalsFlush), true);
-        set => Storage.SetValue(nameof(LocalsFlush), value);
-    }
-
-    bool DefaultCjBj {
-        get => Storage.GetValue(nameof(DefaultCjBj), true);
-        set => Storage.SetValue(nameof(DefaultCjBj), value);
-    }
-
-    bool CompatMode {
-        get => Storage.GetValue(nameof(CompatMode), true);
-        set => Storage.SetValue(nameof(CompatMode), value);
-    }
-
-    bool NullBoolexpr {
-        get => Storage.GetValue(nameof(NullBoolexpr), true);
-        set => Storage.SetValue(nameof(NullBoolexpr), value);
-    }
-
     bool Inited = false;
+    string AHPath, AHWorkFolder;
+    IBasicMenuItem EnableParser, EnableOptimizer, DebugMode, LocalsFlush, DefaultCjBj, CompatMode, NullBoolexpr;
+
     public void InstallMenu(IBasicMenu parentMenu) {
         AHWorkFolder = $"{CurrentProfile.PluginsDirectory}\\AdicHelper";
         AHPath = $"{AHWorkFolder}\\AdicHelper.exe";
 
-        if(!File.Exists(AHPath))
+        if(!File.Exists(AHPath)) {
+            Log.Error($"Can't run {AH}: file \"{AHPath}\" not found.");
             return;
+        }
 
         Storage = ImportStorage.GetPluginStorage(typeof(AdicHelper));
 
         parentMenu.AppendMenuItem(AH, isEnabled: false);
-        parentMenu.AppendMenuItem("Enable AdicParser", true, ParserEnabled, true).Click += (sender, e) => ParserEnabled = (sender as IBasicMenuItem).IsChecked;
-        parentMenu.AppendMenuItem("Enable AdicOptimizer", true, OptimizerEnabled, true).Click += (sender, e) => OptimizerEnabled = (sender as IBasicMenuItem).IsChecked;
-        parentMenu.AppendMenuItem("Enable debug", true, DebugMode, true).Click += (sender, e) => DebugMode = (sender as IBasicMenuItem).IsChecked;
-        parentMenu.AppendMenuItem("Locals auto flush", true, LocalsFlush, true).Click += (sender, e) => LocalsFlush = (sender as IBasicMenuItem).IsChecked;
-        parentMenu.AppendMenuItem("Compile for default cj and bj", true, DefaultCjBj, true).Click += (sender, e) => DefaultCjBj = (sender as IBasicMenuItem).IsChecked;
-        parentMenu.AppendMenuItem("Modules compatibility mode", true, CompatMode, true).Click += (sender, e) => CompatMode = (sender as IBasicMenuItem).IsChecked;
-        parentMenu.AppendMenuItem("Use 'null' as default boolexpr", true, NullBoolexpr, true).Click += (sender, e) => NullBoolexpr = (sender as IBasicMenuItem).IsChecked;
 
-        parentMenu.AppendMenuItem("About AdicHelper...", false, false, true).Click += (sender, e) => Process.Start(AHPath);
+        EnableParser = parentMenu.AppendMenuItem("Enable cJASS", true, Storage.GetValue(nameof(EnableParser), true), true);
+        EnableParser.Click += (s, e) => Storage.SetValue(nameof(EnableParser), EnableParser.IsChecked);
+        
+        EnableOptimizer = parentMenu.AppendMenuItem("Enable optimizer", true, Storage.GetValue(nameof(EnableOptimizer), true), true);
+        EnableOptimizer.Click += (s, e) => Storage.SetValue(nameof(EnableOptimizer), EnableOptimizer.IsChecked);
+        
+        DebugMode = parentMenu.AppendMenuItem("Enable debug", true, Storage.GetValue(nameof(DebugMode), false), true);
+        DebugMode.Click += (s, e) => Storage.SetValue(nameof(DebugMode), DebugMode.IsChecked);
+
+        LocalsFlush = parentMenu.AppendMenuItem("Locals auto flush", true, Storage.GetValue(nameof(LocalsFlush), true), true);
+        LocalsFlush.Click += (s, e) => Storage.SetValue(nameof(LocalsFlush), LocalsFlush.IsChecked);
+
+        DefaultCjBj = parentMenu.AppendMenuItem("Compile for default cj and bj", true, Storage.GetValue(nameof(DefaultCjBj), true), true);
+        DefaultCjBj.Click += (s, e) => Storage.SetValue(nameof(DefaultCjBj), DefaultCjBj.IsChecked);
+
+        CompatMode = parentMenu.AppendMenuItem("Modules compatibility mode", true, Storage.GetValue(nameof(CompatMode), true), true);
+        CompatMode.Click += (s, e) => Storage.SetValue(nameof(CompatMode), CompatMode.IsChecked);
+
+        NullBoolexpr = parentMenu.AppendMenuItem("Use 'null' as default boolexpr", true, Storage.GetValue(nameof(NullBoolexpr), true), true);
+        NullBoolexpr.Click += (s, e) => Storage.SetValue(nameof(NullBoolexpr), NullBoolexpr.IsChecked);
+
+        parentMenu.AppendMenuItem("About AdicHelper...", false, false, true).Click += (s, e) => Process.Start(AHPath);
 
         Hooks.MapSaved += Hooks_MapSaved;
 
         Inited = true;
     }
 
-    public bool CompileScript(string scriptPath, bool savingMap) => !Inited || !ParserEnabled || savingMap;
+    public bool CompileScript(string scriptPath, bool savingMap) => !(Inited && EnableParser.IsChecked && savingMap);
 
     public bool CompileMap(string mapPath) {
-        if(!Inited || !ParserEnabled)
+        if(!(Inited && EnableParser.IsChecked))
             return true;
-
-        var agrs = $"/mappars=\"{mapPath}\" ";
-
-        if(DebugMode)
-            agrs += " /dbg";
-
-        if(LocalsFlush)
-            agrs += " /alf";
-
-        if(DefaultCjBj)
-            agrs += " /ibj=\"0\" /icj=\"0\"";
-
-        if(CompatMode)
-            agrs += " /mcm";
-
-        if(NullBoolexpr)
-            agrs += " /dbt";
 
         var proc = Process.Start(new ProcessStartInfo {
             FileName = AHPath,
             WorkingDirectory = AHWorkFolder,
-            Arguments = agrs,
+            Arguments = $"/mappars=\"{mapPath}\"{(DebugMode.IsChecked ? " /dbg" : "")}{(LocalsFlush.IsChecked ? " /alf" : "")}{(DefaultCjBj.IsChecked ? " /ibj=\"0\" /icj=\"0\"" : "")}{(CompatMode.IsChecked ? " /mcm" : "")}{(NullBoolexpr.IsChecked ? " /dbt" : "")}",
         });
         proc.WaitForExit();
 
@@ -121,7 +88,7 @@ class AdicHelper : ICompiler, ICompilerMenuProvider {
     }
 
     void Hooks_MapSaved(object sender, MapSavedEventArgs e) {
-        if(e.Result && ParserEnabled && OptimizerEnabled) {
+        if(e.Result && Inited && EnableParser.IsChecked && EnableOptimizer.IsChecked) {
             Process.Start(new ProcessStartInfo {
                 FileName = AHPath,
                 WorkingDirectory = AHWorkFolder,
