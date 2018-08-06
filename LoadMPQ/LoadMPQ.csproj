@@ -39,6 +39,7 @@
     <Prefer32Bit>false</Prefer32Bit>
     <GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
     <NoWarn>CS0649</NoWarn>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup>
     <StartupObject>
@@ -56,6 +57,10 @@
     </BootstrapperPackage>
   </ItemGroup>
   <ItemGroup>
+    <Reference Include="Serilog">
+      <HintPath>..\Serilog.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="SharpCraft.Framework">
       <HintPath>..\SharpCraft.Framework.dll</HintPath>
       <Private>False</Private>

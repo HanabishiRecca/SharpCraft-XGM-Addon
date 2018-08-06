@@ -3,6 +3,7 @@ using System.ComponentModel.Composition;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using Serilog;
 using SharpCraft.Framework;
 
 class LoadMPQ {
@@ -11,98 +12,102 @@ class LoadMPQ {
 
     [Export(typeof(InitializeDelegate))]
     public void Initialize() {
-        try {
-            var dir = $"{CurrentProfile.PluginsDirectory}\\LoadMPQ";
-            if(!Directory.Exists(dir)) {
-                Directory.CreateDirectory(dir);
-                File.Create($"{dir}\\place_your_mpq_here!");
-                return;
-            }
-
-            var archives = Directory.GetFiles(dir, "*.mpq", SearchOption.AllDirectories);
-            if(archives.Length < 1)
-                return;
-
-            var cd = Directory.GetCurrentDirectory();
-            for(int i = 0; i < archives.Length; i++) {
-                var path = archives[i];
-                if(path.StartsWith(cd))
-                    archives[i] = path.Substring(cd.Length + 1);
-            }
-
-            ApplyPatch(archives);
-        } catch {
+        var dir = $"{CurrentProfile.PluginsDirectory}\\LoadMPQ";
+        if(!Directory.Exists(dir)) {
+            Directory.CreateDirectory(dir);
+            File.Create($"{dir}\\place_your_mpq_here!");
+            return;
         }
+
+        var archives = Directory.GetFiles(dir, "*.mpq", SearchOption.AllDirectories);
+        if(archives.Length < 1)
+            return;
+
+        var cd = Directory.GetCurrentDirectory();
+        for(int i = 0; i < archives.Length; i++) {
+            var path = archives[i];
+            if(path.StartsWith(cd))
+                archives[i] = path.Substring(cd.Length + 1);
+        }
+
+        ApplyPatch(archives);
     }
     
     const int
-        codeInjOffset = 0x0211A8,
+        codeInjOffset = 0x0211A3,
         mpqFuncOffset = 0x3997A0;
 
-    void ApplyPatch(string[] list) {
-        var extSz = list.Length * (MovEspDwordSize + CallSize) + exPatch.Length + JmpSize;
+    unsafe void ApplyPatch(string[] list) {
+        var extSz = sizeof(JmpOp) + ((sizeof(JmpOp) + sizeof(MovEspDwordOp)) * list.Length) + sizeof(JmpOp);
 
-        IntPtr
-            baseAddr = Process.GetCurrentProcess().MainModule.BaseAddress,
+        int
+            baseAddr = (int)Process.GetCurrentProcess().MainModule.BaseAddress,
             codeInjAddr = baseAddr + codeInjOffset,
-            codeDestAddr = Marshal.AllocHGlobal(extSz),
             mpqFuncAddr = baseAddr + mpqFuncOffset;
 
-        VirtualProtect(codeInjAddr, JmpSize + injPatch.Length, erwFlag, out outPtr);
-        VirtualProtect(codeDestAddr, extSz, erwFlag, out outPtr);
-
-        WriteJmp(codeInjAddr + BasePatch(codeInjAddr, codeDestAddr), codeDestAddr + InjectArchives(codeDestAddr, mpqFuncAddr, list));
-    }
-
-    byte[] injPatch = { 0x90, 0x90, 0x90 };
-    int BasePatch(IntPtr codeInjAddr, IntPtr codeDestAddr) {
-        var offset = WriteJmp(codeDestAddr, codeInjAddr);
-        Marshal.Copy(injPatch, 0, codeDestAddr + offset, injPatch.Length);
-        offset += injPatch.Length;
-        return offset;
-    }
-
-    byte[] exPatch = { 0x83, 0xC4, 0x10, 0xB8, 0x01, 0x00, 0x00, 0x00 };
-    int InjectArchives(IntPtr codeDestAddr, IntPtr mpqFuncAddr, string[] list) {
-        var offset = 0;
-        for(int i = 0; i < list.Length; i++) {
-            offset += WriteMovEspDword(Marshal.StringToHGlobalAnsi(list[i]), codeDestAddr + offset);
-            offset += WriteCall(mpqFuncAddr, codeDestAddr + offset);
+        var injData = (JmpOp*)codeInjAddr;
+        if(!((injData->OpCode == JmpOp.callOp) && (injData->Offset == (mpqFuncAddr - (codeInjAddr + sizeof(JmpOp)))))) {
+            Log.Error("LoadMPQ: Unable to inject code - patch pattern mismatch (wrong game version?)");
+            return;
         }
-        Marshal.Copy(exPatch, 0, codeDestAddr + offset, exPatch.Length);
-        offset += exPatch.Length;
-        return offset;
+
+        var codeDestAddr = (int)Marshal.AllocHGlobal(extSz);
+
+        VirtualProtect(codeInjAddr, sizeof(JmpOp), erwFlag, out outPtr);
+        JmpOp.Write(codeInjAddr, codeDestAddr, false);
+
+        VirtualProtect(codeDestAddr, extSz, erwFlag, out outPtr);
+        var writeAddr = codeDestAddr;
+        JmpOp.Write(writeAddr, mpqFuncAddr, true);
+        writeAddr += sizeof(JmpOp);
+
+        for(int i = 0; i < list.Length; i++) {
+            MovEspDwordOp.Write(writeAddr, (int)Marshal.StringToHGlobalAnsi(list[i]));
+            writeAddr += sizeof(MovEspDwordOp);
+            JmpOp.Write(writeAddr, mpqFuncAddr, true);
+            writeAddr += sizeof(JmpOp);
+        }
+        
+        JmpOp.Write(writeAddr, codeInjAddr + sizeof(JmpOp), false);
     }
 
-    int JmpSize = IntPtr.Size + 1;
-    int WriteJmp(IntPtr jmpAddr, IntPtr writeAddr) {
-        var offset = 0;
-        Marshal.WriteByte(writeAddr, offset++, 0xE9);
-        Marshal.WriteIntPtr(writeAddr, offset, IntPtr.Subtract(jmpAddr, (int)writeAddr + (offset += IntPtr.Size)));
-        return offset;
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    unsafe struct JmpOp {
+        public byte OpCode;
+        public int Offset;
+
+        public const byte
+            callOp = 0xE8,
+            jmpOp = 0xE9;
+
+        public unsafe static void Write(int writeAddr, int jmpAddr, bool call) {
+            var command = (JmpOp*)writeAddr;
+            command->OpCode = call ? callOp : jmpOp;
+            command->Offset = jmpAddr - (writeAddr + sizeof(JmpOp));
+        }
     }
 
-    int CallSize = IntPtr.Size + 1;
-    int WriteCall(IntPtr callAddr, IntPtr writeAddr) {
-        var offset = 0;
-        Marshal.WriteByte(writeAddr, offset++, 0xE8);
-        Marshal.WriteIntPtr(writeAddr, offset, IntPtr.Subtract(callAddr, (int)writeAddr + (offset += IntPtr.Size)));
-        return offset;
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    unsafe struct MovEspDwordOp {
+        byte OpCode0, OpCode1, OpCode2;
+        int Addr;
+
+        const byte
+            op0 = 0xC7,
+            op1 = 0x04,
+            op2 = 0x24;
+
+        public unsafe static void Write(int writeAddr, int destAddr) {
+            var command = (MovEspDwordOp*)writeAddr;
+            command->OpCode0 = op0;
+            command->OpCode1 = op1;
+            command->OpCode2 = op2;
+            command->Addr = destAddr;
+        }
     }
 
-    int MovEspDwordSize = IntPtr.Size + 3;
-    int WriteMovEspDword(IntPtr destAddr, IntPtr writeAddr) {
-        var offset = 0;
-        Marshal.WriteByte(writeAddr, offset++, 0xC7);
-        Marshal.WriteByte(writeAddr, offset++, 0x04);
-        Marshal.WriteByte(writeAddr, offset++, 0x24);
-        Marshal.WriteIntPtr(writeAddr, offset, destAddr);
-        offset += IntPtr.Size;
-        return offset;
-    }
-
-    static readonly IntPtr erwFlag = new IntPtr(0x40);
-    IntPtr outPtr = IntPtr.Zero;
+    static readonly int erwFlag = 0x40;
+    int outPtr = 0;
     [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool VirtualProtect(IntPtr address, int size, IntPtr protect, out IntPtr oldProtect);
+    static extern bool VirtualProtect(int address, int size, int protect, out int oldProtect);
 }
