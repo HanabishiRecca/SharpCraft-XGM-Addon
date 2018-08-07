@@ -38,20 +38,21 @@ class LoadMPQ {
         mpqFuncOffset = 0x3997A0;
 
     unsafe void ApplyPatch(string[] list) {
-        var extSz = sizeof(JmpOp) + ((sizeof(JmpOp) + sizeof(MovEspDwordOp)) * list.Length) + sizeof(JmpOp);
-
         int
             baseAddr = (int)Process.GetCurrentProcess().MainModule.BaseAddress,
             codeInjAddr = baseAddr + codeInjOffset,
             mpqFuncAddr = baseAddr + mpqFuncOffset;
-
-        var injData = (JmpOp*)codeInjAddr;
-        if(!((injData->OpCode == JmpOp.callOp) && (injData->Offset == (mpqFuncAddr - (codeInjAddr + sizeof(JmpOp)))))) {
-            Log.Error("LoadMPQ: Unable to inject code - patch pattern mismatch (wrong game version?)");
+        
+        if(!Check(codeInjAddr, mpqFuncAddr)) {
+            Log.Error("LoadMPQ: Patch pattern mismatch (wrong game version?)");
             return;
         }
 
-        var codeDestAddr = (int)Marshal.AllocHGlobal(extSz);
+        Log.Information("LoadMPQ: Injecting mpq archives");
+
+        int
+            extSz = sizeof(JmpOp) + ((sizeof(JmpOp) + sizeof(MovEspDwordOp)) * list.Length) + sizeof(JmpOp),
+            codeDestAddr = (int)Marshal.AllocHGlobal(extSz);
 
         VirtualProtect(codeInjAddr, sizeof(JmpOp), erwFlag, out outPtr);
         JmpOp.Write(codeInjAddr, codeDestAddr, false);
@@ -71,38 +72,51 @@ class LoadMPQ {
         JmpOp.Write(writeAddr, codeInjAddr + sizeof(JmpOp), false);
     }
 
+    unsafe bool Check(int codeInjAddr, int mpqFuncAddr) {
+        return JmpOp.Compare(*(JmpOp*)codeInjAddr, new JmpOp(mpqFuncAddr - (codeInjAddr + sizeof(JmpOp)), true));
+    }
+
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     unsafe struct JmpOp {
-        public byte OpCode;
-        public int Offset;
+        byte OpCode;
+        int Offset;
 
-        public const byte
-            callOp = 0xE8,
-            jmpOp = 0xE9;
+        const byte
+            callOpCode = 0xE8,
+            jmpOpCode = 0xE9;
 
-        public unsafe static void Write(int writeAddr, int jmpAddr, bool call) {
-            var command = (JmpOp*)writeAddr;
-            command->OpCode = call ? callOp : jmpOp;
-            command->Offset = jmpAddr - (writeAddr + sizeof(JmpOp));
+        public static unsafe void Write(int writeAddr, int jmpAddr, bool call) {
+            var op = (JmpOp*)writeAddr;
+            op->OpCode = call ? callOpCode : jmpOpCode;
+            op->Offset = jmpAddr - (writeAddr + sizeof(JmpOp));
+        }
+
+        public JmpOp(int offset, bool call) {
+            OpCode = call ? callOpCode : jmpOpCode;
+            Offset = offset;
+        }
+
+        public static unsafe bool Compare(JmpOp opA, JmpOp opB) {
+            return (opA.OpCode == opB.OpCode) && (opA.Offset == opB.Offset);
         }
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     unsafe struct MovEspDwordOp {
-        byte OpCode0, OpCode1, OpCode2;
+        fixed byte OpCode[3];
         int Addr;
 
         const byte
-            op0 = 0xC7,
-            op1 = 0x04,
-            op2 = 0x24;
+            opCode0 = 0xC7,
+            opCode1 = 0x04,
+            opCode2 = 0x24;
 
-        public unsafe static void Write(int writeAddr, int destAddr) {
-            var command = (MovEspDwordOp*)writeAddr;
-            command->OpCode0 = op0;
-            command->OpCode1 = op1;
-            command->OpCode2 = op2;
-            command->Addr = destAddr;
+        public static unsafe void Write(int writeAddr, int destAddr) {
+            var op = (MovEspDwordOp*)writeAddr;
+            op->OpCode[0] = opCode0;
+            op->OpCode[1] = opCode1;
+            op->OpCode[2] = opCode2;
+            op->Addr = destAddr;
         }
     }
 

@@ -17,7 +17,7 @@ class WETempFolderIssueWorkaround {
         for(int i = 0; i < Procedures.Length; i++) {
             var procAddr = baseAddr + Procedures[i];
             if(Check(baseAddr, procAddr)) {
-                Log.Information("WETemp: Workaround procedure found");
+                Log.Information("WETemp: Procedure found, applying workaround");
                 FillNOP(procAddr, sizeof(CallOp));
             }
         }
@@ -25,8 +25,7 @@ class WETempFolderIssueWorkaround {
     
     const int srcFunc = 0x112B0;
     unsafe bool Check(int baseAddr, int procAddr) {
-        var call = (CallOp*)procAddr;
-        return (call->OpCode == CallOp.callOp) && (call->Offset == ((baseAddr + srcFunc) - (procAddr + sizeof(CallOp))));
+        return CallOp.Compare(*(CallOp*)procAddr, new CallOp((baseAddr + srcFunc) - (procAddr + sizeof(CallOp))));
     }
 
     unsafe void FillNOP(int addr, int size) {
@@ -39,10 +38,19 @@ class WETempFolderIssueWorkaround {
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     unsafe struct CallOp {
-        public byte OpCode;
-        public int Offset;
+        byte OpCode;
+        int Offset;
 
-        public const byte callOp = 0xE8;
+        const byte callOp = 0xE8;
+
+        public CallOp(int offset) {
+            OpCode = callOp;
+            Offset = offset;
+        }
+
+        public static unsafe bool Compare(CallOp opA, CallOp opB) {
+            return (opA.OpCode == opB.OpCode) && (opA.Offset == opB.Offset);
+        }
     }
 
     static readonly int erwFlag = 0x40;
